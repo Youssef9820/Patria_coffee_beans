@@ -43,4 +43,9 @@ return [
 'batch_from' => 'شحنة بتاريخ',
 'no_payments' => 'لا يوجد مدفوعات مسجلة.',
 'no_debt' => 'ممتاز! لا توجد مديونيات.',
+'filter' => 'تصفية العرض',
+'beginning_balance' => 'رصيد أول المدة',
+'ending_balance' => 'رصيد آخر المدة',
+'added_this_month' => 'المضاف هذا الشهر',
+'period' => 'الفترة',
 ];

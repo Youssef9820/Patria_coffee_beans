@@ -5,64 +5,90 @@ namespace App\Http\Controllers;
 use Illuminate\Http\Request;
 use App\Models\GreenCoffeeType;
 use App\Models\GreenCoffeeBatch;
-use App\Models\GreenCoffeePayment; // Don't forget this
+use App\Models\GreenCoffeePayment;
+use Carbon\Carbon; // <--- المكان الصحيح لاستدعاء المكتبة (فوق الكلاس)
 
 class GreenCoffeeController extends Controller
 {
     // 1. MAIN PAGE (With Financial Calculations)
-    public function index()
+public function index(Request $request)
     {
-        // Get all types with batches and payments
-        $types = GreenCoffeeType::with(['batches.payments'])->get();
+        // 1. تحديد الفترة الزمنية (فلتر الشهر والسنة)
+        $month = $request->input('month', date('m'));
+        $year = $request->input('year', date('Y'));
+        
+        // تواريخ البداية والنهاية للفلتر
+        $startDate = \Carbon\Carbon::createFromDate($year, $month, 1)->startOfDay();
+        $endDate = \Carbon\Carbon::createFromDate($year, $month, 1)->endOfMonth()->endOfDay();
 
-        // Global Calculations for the Financial Report
-        $grandTotalCost = 0;
-        $grandTotalPaid = 0;
-        $allPayments = []; 
-        $debtBatches = []; 
+        // 2. جلب الأنواع
+        $types = GreenCoffeeType::all();
+
+        // 3. حسابات خاصة بـ "جدول الجرد" (Period Stats) - مرتبطة بالشهر المحدد
+        $globalBeginningWeight = 0;
+        $globalBeginningValue = 0;
+        $globalAddedWeight = 0;
+        $globalAddedValue = 0;
 
         foreach ($types as $type) {
-            foreach ($type->batches as $batch) {
-                $grandTotalCost += $batch->total_cost;
-                $paid = $batch->paid_amount;
-                $grandTotalPaid += $paid;
+            // أ. رصيد أول المدة (ما قبل هذا الشهر)
+            $historyBatches = $type->batches()
+                ->where('batch_date', '<', $startDate)
+                ->get();
+                
+            $type->beginning_weight = $historyBatches->sum('weight_kg');
+            $type->beginning_cost = $historyBatches->sum('total_cost');
 
-                // Collect Unpaid Batches
-                if ($batch->remaining_amount > 0) {
-                    $debtBatches[] = $batch;
-                }
+            // ب. حركات الشهر الحالي (للعرض في الجدول)
+            $type->current_batches = $type->batches()
+                ->whereBetween('batch_date', [$startDate, $endDate])
+                ->get();
 
-                // Collect All Payments for History
-                foreach ($batch->payments as $payment) {
-                    $allPayments[] = [
-                        'date' => $payment->payment_date,
-                        'amount' => $payment->amount,
-                        'type_name' => $type->name,
-                        'batch_date' => $batch->batch_date,
-                        'id' => $payment->id
-                    ];
-                }
-            }
+            $type->added_weight = $type->current_batches->sum('weight_kg');
+            $type->added_cost = $type->current_batches->sum('total_cost');
+
+            // ج. رصيد آخر المدة
+            $type->ending_weight = $type->beginning_weight + $type->added_weight;
+            $type->ending_cost = $type->beginning_cost + $type->added_cost;
+
+            // د. تجميع الإجماليات للداشبورد العلوي
+            $globalBeginningWeight += $type->beginning_weight;
+            $globalBeginningValue += $type->beginning_cost;
+            $globalAddedWeight += $type->added_weight;
+            $globalAddedValue += $type->added_cost;
         }
 
-        $grandTotalDebt = $grandTotalCost - $grandTotalPaid;
+        $globalEndingWeight = $globalBeginningWeight + $globalAddedWeight;
+        $globalEndingValue = $globalBeginningValue + $globalAddedValue;
 
-        // Sort payments (Newest first)
-        usort($allPayments, function ($a, $b) {
-            return strtotime($b['date']) - strtotime($a['date']);
+        // 4. حسابات "التقرير المالي" (Financial Report) - دي شاملة كل الفترات
+        // -----------------------------------------------------------
+        // (ده الجزء اللي كان ناقص وسبب المشكلة)
+        $allBatchesForFinance = GreenCoffeeBatch::with('payments')->get();
+        
+        $grandTotalCost = $allBatchesForFinance->sum('total_cost'); // إجمالي قيمة البضاعة تاريخياً
+        $grandTotalPaid = $allBatchesForFinance->sum('paid_amount'); // إجمالي المدفوعات تاريخياً
+        $grandTotalDebt = $grandTotalCost - $grandTotalPaid;         // إجمالي الديون الحالية
+
+        // سجل المدفوعات وتصفية الديون
+        $allPayments = GreenCoffeePayment::with('batch.type')->orderBy('payment_date', 'desc')->get();
+        
+        $debtBatches = $allBatchesForFinance->filter(function ($batch) {
+            return $batch->remaining_amount > 0;
         });
 
+        // إرسال كل البيانات للصفحة
         return view('green-coffee.index', compact(
-            'types', 
-            'grandTotalCost', 
-            'grandTotalPaid', 
-            'grandTotalDebt', 
-            'allPayments', 
-            'debtBatches'
+            'types',
+            'month', 'year', // الفلتر
+            'globalBeginningWeight', 'globalBeginningValue', // أول المدة
+            'globalEndingWeight', 'globalEndingValue',       // آخر المدة
+            'grandTotalCost', 'grandTotalPaid', 'grandTotalDebt', // التقرير المالي (تم الإصلاح)
+            'allPayments', 'debtBatches'
         ));
     }
 
-    // 2. STORE NEW TYPE (This was missing!)
+    // 2. STORE NEW TYPE
     public function storeType(Request $request)
     {
         $request->validate(['name' => 'required|string|max:255']);
@@ -70,7 +96,7 @@ class GreenCoffeeController extends Controller
         return redirect()->back()->with('success', 'Type added successfully');
     }
 
-    // 3. STORE NEW INVENTORY BATCH (This was also likely missing or incomplete)
+    // 3. STORE NEW INVENTORY BATCH
     public function storeBatch(Request $request)
     {
         $request->validate([

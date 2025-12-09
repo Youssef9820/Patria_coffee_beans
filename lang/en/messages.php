@@ -43,4 +43,9 @@ return [
 'batch_from' => 'Batch From',
 'no_payments' => 'No payments recorded yet.',
 'no_debt' => 'Excellent! No outstanding debt.',
+'filter' => 'Filter View',
+'beginning_balance' => 'Beginning Balance',
+'ending_balance' => 'End of Period Balance',
+'added_this_month' => 'Added This Month',
+'period' => 'Period',
 ];

@@ -76,27 +76,13 @@
         .modal-backdrop { background-color: rgba(31, 41, 55, 0.6); backdrop-filter: blur(4px); }
     </style>
 
-    <x-slot name="header">
-        <div class="flex items-center gap-3">
-            <div class="p-2 bg-white rounded-full shadow-sm">
-                <i class="fa-solid fa-leaf text-[#556B2F] text-xl"></i>
-            </div>
-            <h2 class="font-bold text-2xl text-gray-800 leading-tight brand-font">
-                {{ __('messages.green_coffee_inventory') }}
-            </h2>
-        </div>
-    </x-slot>
+<!-- No x-slot header needed for new layout -->
 
     @php
         $isRtl = app()->getLocale() == 'ar';
         $dir = $isRtl ? 'rtl' : 'ltr';
-        
-        $grandTotalWeight = 0;
-        $grandTotalValue = 0;
-        foreach($types as $t) {
-            $grandTotalWeight += $t->batches->sum('weight_kg');
-            $grandTotalValue += $t->batches->sum('total_cost');
-        }
+        // Get Month Name for Display
+        $monthName = \Carbon\Carbon::create()->month($month ?? date('m'))->locale(app()->getLocale())->monthName;
     @endphp
 
     <!-- MAIN APP CONTAINER (One x-data for everything) -->
@@ -110,78 +96,101 @@
          
         <div class="max-w-7xl mx-auto sm:px-6 lg:px-8 space-y-8">
             
-            <!-- 1. TOP STATS ROW -->
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <!-- Weight Stats -->
-                <div class="stat-card flex justify-between items-center" style="border-left-color: #556B2F;">
-                    <div>
-                        <p class="text-xs font-bold text-gray-400 uppercase tracking-wider">{{ __('messages.total_weight') }}</p>
-                        <p class="text-4xl font-bold text-gray-800 brand-font mt-1">
-                            {{ number_format($grandTotalWeight, 0) }} <span class="text-sm text-gray-400 font-sans">kg</span>
-                        </p>
+<!-- 1. HEADER & FILTER BAR -->
+            <div class="flex flex-col md:flex-row justify-between items-end gap-4 bg-white p-5 rounded-xl shadow-sm border border-gray-100">
+                
+                <!-- Title & Current Period -->
+                <div>
+                    <h2 class="font-bold text-2xl text-[#3E2723] brand-font flex items-center gap-2">
+                        <i class="fa-solid fa-leaf text-[#556B2F]"></i> {{ __('messages.green_coffee_inventory') }}
+                    </h2>
+                    <p class="text-sm text-gray-500 mt-1 font-bold">
+                        {{ __('messages.period') }}: <span class="text-[#556B2F]">{{ $monthName }} {{ $year ?? date('Y') }}</span>
+                    </p>
+                </div>
+
+<!-- Date Filter Form -->
+                <form method="GET" action="{{ route('green-coffee.index') }}" class="flex items-center gap-2 bg-gray-50 p-2 rounded-lg border border-gray-200">
+                    
+                    <!-- Month Select -->
+                    <select name="month" onchange="this.form.submit()" class="bg-transparent border-none text-sm font-bold focus:ring-0 text-gray-700 cursor-pointer hover:text-[#3E2723]">
+                        @for($m=1; $m<=12; $m++)
+                            <option value="{{ $m }}" {{ $m == ($month ?? date('m')) ? 'selected' : '' }}>
+                                {{ \Carbon\Carbon::create()->month($m)->locale('en')->monthName }}
+                            </option>
+                        @endfor
+                    </select>
+                    
+                    <span class="text-gray-300">|</span>
+                    
+                    <!-- Year Select -->
+                    <select name="year" onchange="this.form.submit()" class="bg-transparent border-none text-sm font-bold focus:ring-0 text-gray-700 cursor-pointer hover:text-[#3E2723]">
+                        @for($y=date('Y'); $y>=2023; $y--)
+                            <option value="{{ $y }}" {{ $y == ($year ?? date('Y')) ? 'selected' : '' }}>{{ $y }}</option>
+                        @endfor
+                    </select>
+
+                    <!-- Filter Button (Optional now, but good to have) -->
+                    <button type="submit" class="bg-[#3E2723] text-white p-2 rounded-md hover:bg-[#2b1b18] transition shadow-sm">
+                        <i class="fa-solid fa-filter"></i>
+                    </button>
+                </form>
+            </div>
+
+            <!-- 2. PERIOD STATS ROW (Beginning -> Added -> Ending) -->
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <!-- Beginning Balance -->
+                <div class="stat-card" style="border-left-color: #FFA000;">
+                    <p class="text-xs font-bold text-gray-400 uppercase tracking-wider">{{ __('messages.beginning_balance') }}</p>
+                    <div class="flex items-baseline gap-2 mt-1">
+                        <p class="text-2xl font-bold text-[#FFA000] brand-font">{{ number_format($globalBeginningWeight ?? 0, 0) }}</p>
+                        <span class="text-xs text-gray-400 font-bold">kg</span>
                     </div>
-                    <div class="h-12 w-12 rounded-full bg-green-50 flex items-center justify-center text-[#556B2F]">
-                        <i class="fa-solid fa-weight-hanging fa-xl"></i>
-                    </div>
+                    <p class="text-xs text-gray-400 mt-1">{{ number_format($globalBeginningValue ?? 0, 0) }} EGP</p>
                 </div>
                 
-                <!-- Value Stats -->
-                <div class="stat-card flex justify-between items-center" style="border-left-color: #3E2723;">
-                    <div>
-                        <p class="text-xs font-bold text-gray-400 uppercase tracking-wider">{{ __('messages.total_value') }}</p>
-                        <p class="text-4xl font-bold text-[#3E2723] brand-font mt-1">
-                            {{ number_format($grandTotalValue, 0) }} <span class="text-sm text-gray-400 font-sans">EGP</span>
-                        </p>
+                <!-- Added This Month -->
+                <div class="stat-card" style="border-left-color: #556B2F;">
+                    <p class="text-xs font-bold text-gray-400 uppercase tracking-wider">{{ __('messages.added_this_month') }}</p>
+                    <div class="flex items-baseline gap-2 mt-1">
+                        <p class="text-2xl font-bold text-[#556B2F] brand-font">+ {{ number_format(($globalEndingWeight ?? 0) - ($globalBeginningWeight ?? 0), 0) }}</p>
+                        <span class="text-xs text-gray-400 font-bold">kg</span>
                     </div>
-                    <div class="h-12 w-12 rounded-full bg-orange-50 flex items-center justify-center text-[#3E2723]">
-                        <i class="fa-solid fa-sack-dollar fa-xl"></i>
+                </div>
+
+                <!-- Ending Balance -->
+                <div class="stat-card" style="border-left-color: #3E2723;">
+                    <p class="text-xs font-bold text-gray-400 uppercase tracking-wider">{{ __('messages.ending_balance') }}</p>
+                    <div class="flex items-baseline gap-2 mt-1">
+                        <p class="text-3xl font-bold text-[#3E2723] brand-font">{{ number_format($globalEndingWeight ?? 0, 0) }}</p>
+                        <span class="text-sm text-gray-400 font-bold">kg</span>
                     </div>
+                    <p class="text-xs text-gray-400 mt-1">{{ number_format($globalEndingValue ?? 0, 0) }} EGP</p>
                 </div>
             </div>
 
-            <!-- 2. TOOLBAR (Actions) -->
-            <div class="flex flex-col md:flex-row justify-between items-center gap-4 bg-white p-4 rounded-xl shadow-sm border border-gray-100">
-                <div class="flex gap-3 w-full md:w-auto">
-                    <button onclick="openTypeModal('create')" type="button" class="btn-premium btn-brown py-2.5 px-5 flex-1 md:flex-none justify-center">
-                        <i class="fa-solid fa-plus"></i> {{ __('messages.add_new_type') }}
-                    </button>
-
-                    <button onclick="openBatchModal('create')" type="button" class="btn-premium btn-green py-2.5 px-5 flex-1 md:flex-none justify-center">
-                        <i class="fa-solid fa-box-open"></i> {{ __('messages.add_new_batch') }}
-                    </button>
-                </div>
-
-                <div class="flex gap-3 w-full md:w-auto">
-                    <!-- Financial Report -->
-                    <button @click="showFinancialModal = true" class="btn-premium btn-dark py-2.5 px-5 flex-1 md:flex-none justify-center">
-                        <i class="fa-solid fa-file-invoice-dollar"></i> {{ __('messages.financial_report') }}
-                    </button>
-
-                    <!-- Lang Switch -->
-                    <a href="{{ route('switchLang', $isRtl ? 'en' : 'ar') }}" class="px-4 py-2 rounded-lg border-2 border-gray-200 text-gray-600 font-bold hover:border-[#3E2723] hover:text-[#3E2723] transition flex items-center gap-2">
-                        <i class="fa-solid fa-globe"></i> {{ $isRtl ? 'EN' : 'AR' }}
-                    </a>
-                </div>
+            <!-- 3. ACTION BUTTONS -->
+            <div class="flex flex-wrap gap-3 justify-end">
+                <button onclick="openTypeModal('create')" class="btn-premium btn-brown py-2 px-4 text-sm"><i class="fa-solid fa-plus"></i> {{ __('messages.add_new_type') }}</button>
+                <button onclick="openBatchModal('create')" class="btn-premium btn-green py-2 px-4 text-sm"><i class="fa-solid fa-box-open"></i> {{ __('messages.add_new_batch') }}</button>
+                <button @click="showFinancialModal = true" class="btn-premium btn-dark py-2 px-4 text-sm"><i class="fa-solid fa-file-invoice-dollar"></i> {{ __('messages.financial_report') }}</button>
+                <a href="{{ route('switchLang', $isRtl ? 'en' : 'ar') }}" class="px-4 py-2 rounded-lg border border-gray-300 bg-white text-gray-600 font-bold hover:bg-gray-50 transition text-sm flex items-center gap-2"><i class="fa-solid fa-globe"></i> {{ $isRtl ? 'EN' : 'AR' }}</a>
             </div>
 
-            <!-- 3. INVENTORY TABLE -->
+<!-- 4. INVENTORY TABLE (PERIOD VIEW) -->
             <div class="table-container">
                 <table class="min-w-full divide-y divide-gray-100">
                     <thead>
                         <tr>
                             <th class="custom-th text-{{ $isRtl ? 'right' : 'left' }}">{{ __('messages.coffee_type') }}</th>
-                            <th class="custom-th text-{{ $isRtl ? 'right' : 'left' }}">{{ __('messages.total_weight') }}</th>
-                            <th class="custom-th text-{{ $isRtl ? 'right' : 'left' }}">{{ __('messages.total_value') }}</th>
+                            <th class="custom-th text-{{ $isRtl ? 'right' : 'left' }}">{{ __('messages.beginning_balance') }}</th>
+                            <th class="custom-th text-{{ $isRtl ? 'right' : 'left' }}">{{ __('messages.added_this_month') }}</th>
+                            <th class="custom-th text-{{ $isRtl ? 'right' : 'left' }}">{{ __('messages.ending_balance') }}</th>
                             <th class="custom-th text-center">{{ __('messages.actions') }}</th>
                         </tr>
                     </thead>
                     <tbody class="divide-y divide-gray-100 bg-white">
                         @foreach($types as $type)
-                            @php
-                                $currentWeight = $type->batches->sum('weight_kg');
-                                $currentValue = $type->batches->sum('total_cost');
-                            @endphp
-
                             <tr x-data="{ expanded: false }" class="hover:bg-[#FAF9F6] transition group">
                                 <td class="px-6 py-5 whitespace-nowrap">
                                     <div class="flex items-center gap-3">
@@ -200,8 +209,22 @@
                                         </div>
                                     </div>
                                 </td>
-                                <td class="px-6 py-5 font-medium text-gray-600">{{ number_format($currentWeight, 2) }} kg</td>
-                                <td class="px-6 py-5 font-bold text-[#556B2F]">{{ number_format($currentValue, 2) }} EGP</td>
+                                
+                                <!-- Beginning -->
+                                <td class="px-6 py-5 text-gray-500 font-medium">
+                                    {{ number_format($type->beginning_weight ?? 0, 2) }} kg
+                                </td>
+                                
+                                <!-- Added -->
+                                <td class="px-6 py-5 text-[#556B2F] font-bold">
+                                    + {{ number_format($type->added_weight ?? 0, 2) }} kg
+                                </td>
+                                
+                                <!-- Ending -->
+                                <td class="px-6 py-5 font-bold text-[#3E2723] text-lg">
+                                    {{ number_format($type->ending_weight ?? 0, 2) }} kg
+                                </td>
+
                                 <td class="px-6 py-5 text-center">
                                     <button @click="expanded = !expanded" class="text-[#3E2723] font-bold text-sm hover:underline focus:outline-none">
                                         <span x-show="!expanded"><i class="fa-solid fa-chevron-down"></i> {{ __('messages.details') }}</span>
@@ -212,66 +235,69 @@
                                 <!-- NESTED DETAILS ROW -->
                                 <template x-if="expanded">
                                     <tr class="bg-[#FAF9F6] border-y border-gray-200" x-transition.opacity.duration.300ms>
-                                        <td colspan="4" class="p-4 md:p-6">
+                                        <td colspan="5" class="p-4 md:p-6">
                                             <div class="bg-white rounded-lg border border-gray-200 shadow-inner p-4">
                                                 <div class="flex justify-between items-center mb-4">
-                                                    <h4 class="font-bold text-[#3E2723] uppercase text-xs tracking-widest"><i class="fa-solid fa-list-ul"></i> Inventory Batches</h4>
+                                                    <h4 class="font-bold text-[#3E2723] uppercase text-xs tracking-widest"><i class="fa-solid fa-list-ul"></i> Activity for {{ $monthName }}</h4>
                                                 </div>
 
-                                                @if($type->batches->count() > 0)
-                                                    <table class="w-full text-sm">
-                                                        <thead class="text-gray-400 border-b">
-                                                            <tr>
-                                                                <th class="pb-2 text-{{ $isRtl ? 'right' : 'left' }}">{{ __('messages.date') }}</th>
-                                                                <th class="pb-2 text-{{ $isRtl ? 'right' : 'left' }}">{{ __('messages.weight') }}</th>
-                                                                <th class="pb-2 text-{{ $isRtl ? 'right' : 'left' }}">{{ __('messages.price_per_kg') }}</th>
-                                                                <th class="pb-2 text-{{ $isRtl ? 'right' : 'left' }}">{{ __('messages.total_price') }}</th>
-                                                                <th class="pb-2 text-{{ $isRtl ? 'right' : 'left' }}">{{ __('messages.remaining') }}</th>
-                                                                <th class="pb-2 text-center">Actions</th>
-                                                            </tr>
-                                                        </thead>
-                                                        <tbody class="divide-y">
-                                                            @foreach($type->batches as $batch)
-                                                                <tr class="hover:bg-gray-50">
-                                                                    <td class="py-3 text-gray-700 font-medium">
-                                                                        {{ $batch->batch_date }} 
-                                                                        <span class="text-xs text-gray-400 ml-1">({{ \Carbon\Carbon::parse($batch->batch_time)->format('h:i A') }})</span>
-                                                                    </td>
-                                                                    <td class="py-3 font-bold">{{ $batch->weight_kg }}</td>
-                                                                    <td class="py-3 text-gray-500">{{ number_format($batch->price_per_kg, 2) }}</td>
-                                                                    <td class="py-3 font-bold text-[#3E2723]">{{ number_format($batch->total_cost, 2) }}</td>
-                                                                    
-                                                                    <!-- Payment Status -->
-                                                                    <td class="py-3">
-                                                                        @if($batch->remaining_amount > 0)
-                                                                            <div class="flex items-center gap-2">
-                                                                                <span class="font-bold text-red-600">{{ number_format($batch->remaining_amount, 2) }}</span>
-                                                                                <button onclick="openPayModal({{ $batch->id }}, {{ $batch->remaining_amount }})" class="bg-green-100 text-green-700 hover:bg-green-200 px-2 py-1 rounded text-xs font-bold transition">
-                                                                                    Pay
-                                                                                </button>
-                                                                            </div>
-                                                                        @else
-                                                                            <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-800">
-                                                                                <i class="fa-solid fa-check mr-1"></i> Paid
-                                                                            </span>
-                                                                        @endif
-                                                                    </td>
+                                                <table class="w-full text-sm">
+                                                    <thead class="text-gray-400 border-b">
+                                                        <tr>
+                                                            <th class="pb-2 text-{{ $isRtl ? 'right' : 'left' }}">{{ __('messages.date') }}</th>
+                                                            <th class="pb-2 text-{{ $isRtl ? 'right' : 'left' }}">{{ __('messages.weight') }}</th>
+                                                            <th class="pb-2 text-{{ $isRtl ? 'right' : 'left' }}">{{ __('messages.price_per_kg') }}</th>
+                                                            <th class="pb-2 text-{{ $isRtl ? 'right' : 'left' }}">{{ __('messages.total_price') }}</th>
+                                                            <th class="pb-2 text-{{ $isRtl ? 'right' : 'left' }}">{{ __('messages.remaining') }}</th>
+                                                            <th class="pb-2 text-center">Actions</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody class="divide-y">
+                                                        <!-- 1. SHOW BEGINNING BALANCE ROW IF EXISTS -->
+                                                        @if(($type->beginning_weight ?? 0) > 0)
+                                                        <tr class="bg-yellow-50 text-yellow-800 font-bold">
+                                                            <td class="py-3 px-2"><i class="fa-solid fa-clock-rotate-left"></i></td>
+                                                            <td class="py-3">{{ number_format($type->beginning_weight, 2) }} kg</td>
+                                                            <td class="py-3" colspan="2">{{ __('messages.beginning_balance') }}</td>
+                                                            <td class="py-3">-</td>
+                                                            <td class="py-3 text-center">-</td>
+                                                        </tr>
+                                                        @endif
 
-                                                                    <!-- Batch Actions -->
-                                                                    <td class="py-3 text-center flex justify-center gap-3">
-                                                                        <button onclick="openBatchModal('edit', {{ $batch }})" class="text-blue-500 hover:text-blue-700"><i class="fa-solid fa-pen-to-square"></i></button>
-                                                                        <form action="{{ route('green-coffee.destroyBatch', $batch->id) }}" method="POST" onsubmit="return confirm('Delete this batch?');">
-                                                                            @csrf @method('DELETE')
-                                                                            <button type="submit" class="text-red-400 hover:text-red-600"><i class="fa-solid fa-trash-can"></i></button>
-                                                                        </form>
-                                                                    </td>
-                                                                </tr>
-                                                            @endforeach
-                                                        </tbody>
-                                                    </table>
-                                                @else
-                                                    <p class="text-gray-400 italic text-center py-4">{{ __('messages.no_records') }}</p>
-                                                @endif
+                                                        <!-- 2. CURRENT BATCHES -->
+                                                        @foreach(($type->current_batches ?? []) as $batch)
+                                                            <tr class="hover:bg-gray-50">
+                                                                <td class="py-3 text-gray-700 font-medium">
+                                                                    {{ $batch->batch_date }} 
+                                                                </td>
+                                                                <td class="py-3 font-bold text-[#556B2F]">+ {{ $batch->weight_kg }}</td>
+                                                                <td class="py-3 text-gray-500">{{ number_format($batch->price_per_kg, 2) }}</td>
+                                                                <td class="py-3 font-bold text-[#3E2723]">{{ number_format($batch->total_cost, 2) }}</td>
+                                                                
+                                                                <td class="py-3">
+                                                                    @if($batch->remaining_amount > 0)
+                                                                        <div class="flex items-center gap-2">
+                                                                            <span class="font-bold text-red-600">{{ number_format($batch->remaining_amount, 2) }}</span>
+                                                                            <button onclick="openPayModal({{ $batch->id }}, {{ $batch->remaining_amount }})" class="bg-green-100 text-green-700 hover:bg-green-200 px-2 py-1 rounded text-xs font-bold transition">Pay</button>
+                                                                        </div>
+                                                                    @else
+                                                                        <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-800">
+                                                                            <i class="fa-solid fa-check mr-1"></i> Paid
+                                                                        </span>
+                                                                    @endif
+                                                                </td>
+
+                                                                <td class="py-3 text-center flex justify-center gap-3">
+                                                                    <button onclick="openBatchModal('edit', {{ $batch }})" class="text-blue-500 hover:text-blue-700"><i class="fa-solid fa-pen-to-square"></i></button>
+                                                                    <form action="{{ route('green-coffee.destroyBatch', $batch->id) }}" method="POST" onsubmit="return confirm('Delete this batch?');">
+                                                                        @csrf @method('DELETE')
+                                                                        <button type="submit" class="text-red-400 hover:text-red-600"><i class="fa-solid fa-trash-can"></i></button>
+                                                                    </form>
+                                                                </td>
+                                                            </tr>
+                                                        @endforeach
+                                                    </tbody>
+                                                </table>
                                             </div>
                                         </td>
                                     </tr>
